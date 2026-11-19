@@ -1,0 +1,36 @@
+# Dependencies & build outputs
+node_modules/
+build/
+dist/
+dist-server/
+coverage/
+
+# OS & logs
+.DS_Store
+*.log
+firebase-debug.log*
+firestore-debug.log*
+
+# Environment files (keep only template)
+.env
+.env.*
+!.env.example
+
+# Secrets, private keys, service accounts & backups
+*.pem
+*.key
+*.p12
+*.pfx
+*service-account*.json
+*serviceAccount*.json
+*credentials*.json
+firebase-adminsdk*.json
+*.backup.json
+firebase-applet-config.*.json
+
+# Tool caches
+.gmp_cache/
+.vite/
+.wrangler/
+.dev.vars
+.dev.vars.*

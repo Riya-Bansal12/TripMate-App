@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix Remix TripMate — AI Interactive Trip Planning \u0026 Experience Builder",
+  "description": "Plan smarter, explore more, and build customizable day-by-day travel itineraries with drag-and-drop scheduling, alternative discovery, and dynamic INR expense tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,26 @@
+# Cloudflare Workers configuration for TripMate (Free plan target)
+# Do NOT put GEMINI_API_KEY or private credentials in this file.
+# Configure runtime secret via: npx wrangler secret put GEMINI_API_KEY
+
+name = "tripmate-app"
+main = "worker/index.ts"
+compatibility_date = "2026-03-01"
+
+[build]
+command = "npm run build:client"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[vars]
+FIREBASE_PROJECT_ID = "tripmate-81b7c"
+GEMINI_MODEL = "gemini-4-hydrogen"
+
+# Distributed edge rate limiting (supported on Cloudflare Workers Free; Wrangler >= 4.36.0)
+[[ratelimits]]
+name = "AI_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

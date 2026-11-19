@@ -1,0 +1,605 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private traveler profile and default travel preferences keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the profile owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Traveler display name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Traveler email address.",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "homeCity": {
+          "type": "string",
+          "description": "Default origin city.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "defaultTravelStyle": {
+          "type": "string",
+          "enum": ["Adventure", "Relaxed", "Balanced", "Custom"],
+          "description": "Preferred default travel style."
+        },
+        "preferredNotes": {
+          "type": "array",
+          "description": "Preferred experience and accessibility tags (max 20)."
+        },
+        "activeTripId": {
+          "type": "string",
+          "description": "Currently selected trip document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional profile avatar URL from authentication provider.",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "authProvider": {
+          "type": "string",
+          "description": "Authentication provider ID (e.g., password, google.com).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["uid", "name", "email", "homeCity", "defaultTravelStyle", "preferredNotes", "createdAt", "updatedAt"]
+    },
+    "TravelPreferences": {
+      "title": "TravelPreferences",
+      "description": "User travel preferences and default trip wizard settings.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "defaultTravelStyle": {
+          "type": "string",
+          "enum": ["Adventure", "Relaxed", "Balanced", "Custom"]
+        },
+        "homeCity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "preferredNotes": {
+          "type": "array",
+          "description": "Bounded preference tags (max 20)."
+        },
+        "defaultStayMode": {
+          "type": "string",
+          "enum": ["without-hotel", "with-hotel"]
+        },
+        "defaultCommuteMode": {
+          "type": "string",
+          "enum": ["DRIVING", "TRANSIT", "WALKING", "TWO_WHEELER"]
+        },
+        "maxHotelRadiusKm": {
+          "type": "number"
+        },
+        "waitingBufferMinutes": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "defaultTravelStyle", "homeCity", "preferredNotes", "createdAt", "updatedAt"]
+    },
+    "SavedAddress": {
+      "title": "SavedAddress",
+      "description": "User starting/home address resolved via Google Maps Places.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "formattedAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "placeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "location": {
+          "type": "object",
+          "description": "GeoPoint { lat, lng }."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "label", "formattedAddress", "createdAt", "updatedAt"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Per-user application planner and budget alert settings.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "budgetWarningThresholdPct": {
+          "type": "number"
+        },
+        "enableConflictDetection": {
+          "type": "boolean"
+        },
+        "autoSortByTime": {
+          "type": "boolean"
+        },
+        "defaultDayStartTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "budgetWarningThresholdPct", "enableConflictDetection", "autoSortByTime", "defaultDayStartTime", "createdAt", "updatedAt"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "Top-level trip plan owned by a single Firebase authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "daysCount": {
+          "type": "integer"
+        },
+        "adults": {
+          "type": "integer"
+        },
+        "children": {
+          "type": "integer"
+        },
+        "travelStyle": {
+          "type": "string",
+          "enum": ["Adventure", "Relaxed", "Balanced", "Custom"]
+        },
+        "budget": {
+          "type": "object",
+          "description": "Inline planned budget breakdown (total, daily, food, transport, attraction)."
+        },
+        "generalNotes": {
+          "type": "array",
+          "description": "Bounded trip preference notes (max 20)."
+        },
+        "stayMode": {
+          "type": "string",
+          "enum": ["without-hotel", "with-hotel"]
+        },
+        "hotel": {
+          "type": "object",
+          "description": "Optional anchored hotel metadata."
+        },
+        "commuteMode": {
+          "type": "string",
+          "enum": ["DRIVING", "TRANSIT", "WALKING", "TWO_WHEELER"]
+        },
+        "maxHotelRadiusKm": {
+          "type": "number"
+        },
+        "waitingBufferMinutes": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "name", "origin", "destination", "daysCount", "adults", "children", "travelStyle", "budget", "generalNotes", "createdAt", "updatedAt"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Scheduled itinerary activity belonging to a trip.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Food", "Attraction", "Transport", "Leisure", "Nature", "Culture"]
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "imageUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
+        },
+        "startTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "endTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "durationMinutes": {
+          "type": "integer"
+        },
+        "cost": {
+          "type": "number"
+        },
+        "day": {
+          "type": "integer"
+        },
+        "isChildFriendly": {
+          "type": "boolean"
+        },
+        "crowdLevel": {
+          "type": "string",
+          "enum": ["Low", "Moderate", "High"]
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "placeId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "coordinates": {
+          "type": "object"
+        },
+        "travelFromHotelMinutes": {
+          "type": "number"
+        },
+        "travelFromPrevMinutes": {
+          "type": "number"
+        },
+        "waitingTimeMinutes": {
+          "type": "number"
+        },
+        "distanceFromHotelKm": {
+          "type": "number"
+        },
+        "isFarFromHotel": {
+          "type": "boolean"
+        },
+        "departureFromHotelTime": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "tripId", "title", "description", "category", "location", "imageUrl", "startTime", "endTime", "durationMinutes", "cost", "day", "createdAt", "updatedAt"]
+    },
+    "DayPlan": {
+      "title": "DayPlan",
+      "description": "Day-specific pace and notes configuration within a trip.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dayNumber": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "pace": {
+          "type": "string",
+          "enum": ["Relaxed", "Balanced", "Activity-heavy"]
+        },
+        "notes": {
+          "type": "array",
+          "description": "Bounded day notes (max 20)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "tripId", "dayNumber", "title", "pace", "notes", "createdAt", "updatedAt"]
+    },
+    "PlannedBudget": {
+      "title": "PlannedBudget",
+      "description": "Planned INR budget breakdown for a trip.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "total": {
+          "type": "number"
+        },
+        "daily": {
+          "type": "number"
+        },
+        "food": {
+          "type": "number"
+        },
+        "transport": {
+          "type": "number"
+        },
+        "attraction": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "tripId", "total", "daily", "food", "transport", "attraction", "createdAt", "updatedAt"]
+    },
+    "ActualExpense": {
+      "title": "ActualExpense",
+      "description": "Logged on-trip actual expense item in INR.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "tripId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "amount": {
+          "type": "number"
+        },
+        "day": {
+          "type": "integer"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Food", "Attraction", "Transport", "Leisure"]
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "tripId", "name", "amount", "day", "category", "createdAt", "updatedAt"]
+    },
+    "MigrationRecord": {
+      "title": "MigrationRecord",
+      "description": "Tracks verified one-time migration of legacy localStorage workspace data into Firestore for a user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["completed", "dismissed"]
+        },
+        "migratedTripsCount": {
+          "type": "integer"
+        },
+        "migratedActivitiesCount": {
+          "type": "integer"
+        },
+        "migratedDayPlansCount": {
+          "type": "integer"
+        },
+        "migratedBudgetsCount": {
+          "type": "integer"
+        },
+        "migratedExpensesCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "status", "migratedTripsCount", "migratedActivitiesCount", "migratedDayPlansCount", "migratedBudgetsCount", "migratedExpensesCount", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private traveler profile document keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/preferences/{preferenceId}": {
+      "schema": { "$ref": "#/entities/TravelPreferences" },
+      "description": "User travel preferences and wizard defaults."
+    },
+    "/users/{userId}/addresses/{addressId}": {
+      "schema": { "$ref": "#/entities/SavedAddress" },
+      "description": "User saved starting addresses."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AppSettings" },
+      "description": "User application planner and budget settings."
+    },
+    "/users/{userId}/migrations/{migrationId}": {
+      "schema": { "$ref": "#/entities/MigrationRecord" },
+      "description": "User localStorage-to-Firestore migration verification state."
+    },
+    "/users/{userId}/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Trip documents scoped strictly under their owning authenticated user."
+    },
+    "/users/{userId}/trips/{tripId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/Activity" },
+      "description": "Itinerary activities belonging to a user's trip."
+    },
+    "/users/{userId}/trips/{tripId}/dayPlans/{dayPlanId}": {
+      "schema": { "$ref": "#/entities/DayPlan" },
+      "description": "Per-day pace and preference plans belonging to a user's trip."
+    },
+    "/users/{userId}/trips/{tripId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/PlannedBudget" },
+      "description": "Planned INR budget breakdown documents belonging to a user's trip."
+    },
+    "/users/{userId}/trips/{tripId}/actualExpenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/ActualExpense" },
+      "description": "Actual on-trip expense ledger items belonging to a user's trip."
+    }
+  }
+}

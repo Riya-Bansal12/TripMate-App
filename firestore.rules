@@ -1,0 +1,540 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Global Security & Validation Helpers
+    // =========================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimeHHMM(val) {
+      return val is string && val.size() == 5 && val.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+    }
+
+    function isValidNotesList(notes) {
+      return notes is list
+        && notes.size() <= 20
+        && (notes.size() == 0 || (notes[0] is string && notes[0].size() >= 1 && notes[0].size() <= 200));
+    }
+
+    function isValidGeoPoint(pt) {
+      return pt is map
+        && pt.keys().hasAll(['lat', 'lng'])
+        && pt.keys().hasOnly(['lat', 'lng'])
+        && pt.lat is number && pt.lat >= -90 && pt.lat <= 90
+        && pt.lng is number && pt.lng >= -180 && pt.lng <= 180;
+    }
+
+    function isValidTravelStyle(val) {
+      return val in ['Adventure', 'Relaxed', 'Balanced', 'Custom'];
+    }
+
+    function isValidDayPace(val) {
+      return val in ['Relaxed', 'Balanced', 'Activity-heavy'];
+    }
+
+    function isValidStayMode(val) {
+      return val in ['without-hotel', 'with-hotel'];
+    }
+
+    function isValidCommuteMode(val) {
+      return val in ['DRIVING', 'TRANSIT', 'WALKING', 'TWO_WHEELER'];
+    }
+
+    function isValidActivityCategory(val) {
+      return val in ['Food', 'Attraction', 'Transport', 'Leisure', 'Nature', 'Culture'];
+    }
+
+    function isValidExpenseBucket(val) {
+      return val in ['Food', 'Attraction', 'Transport', 'Leisure'];
+    }
+
+    function isValidBudgetMap(b) {
+      return b is map
+        && b.keys().hasAll(['total', 'daily', 'food', 'transport', 'attraction'])
+        && b.keys().hasOnly(['total', 'daily', 'food', 'transport', 'attraction'])
+        && b.total is number && b.total >= 0 && b.total <= 100000000
+        && b.daily is number && b.daily >= 0 && b.daily <= 100000000
+        && b.food is number && b.food >= 0 && b.food <= 100000000
+        && b.transport is number && b.transport >= 0 && b.transport <= 100000000
+        && b.attraction is number && b.attraction >= 0 && b.attraction <= 100000000;
+    }
+
+    function isValidHotelMap(h) {
+      return h is map
+        && h.keys().hasAll(['name', 'formattedAddress', 'location'])
+        && h.keys().hasOnly(['name', 'formattedAddress', 'placeId', 'location', 'rating'])
+        && h.name is string && h.name.size() >= 1 && h.name.size() <= 200
+        && h.formattedAddress is string && h.formattedAddress.size() >= 1 && h.formattedAddress.size() <= 300
+        && isValidGeoPoint(h.location)
+        && (!('placeId' in h) || h.placeId == null || (h.placeId is string && h.placeId.size() <= 200))
+        && (!('rating' in h) || h.rating == null || (h.rating is number && h.rating >= 0 && h.rating <= 5));
+    }
+
+    function isTripOwner(userId, tripId) {
+      return isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId)/trips/$(tripId))
+        && get(/databases/$(database)/documents/users/$(userId)/trips/$(tripId)).data.userId == request.auth.uid;
+    }
+
+    function isTripOwnerAfter(userId, tripId) {
+      return isOwner(userId)
+        && existsAfter(/databases/$(database)/documents/users/$(userId)/trips/$(tripId))
+        && getAfter(/databases/$(database)/documents/users/$(userId)/trips/$(tripId)).data.userId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // Entity Validation Blueprints
+    // =========================================================================
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'homeCity', 'defaultTravelStyle', 'preferredNotes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'homeCity', 'defaultTravelStyle', 'preferredNotes', 'activeTripId', 'photoURL', 'authProvider', 'createdAt', 'updatedAt'])
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+        && data.homeCity is string && data.homeCity.size() >= 1 && data.homeCity.size() <= 120
+        && isValidTravelStyle(data.defaultTravelStyle)
+        && isValidNotesList(data.preferredNotes)
+        && (!('activeTripId' in data) || data.activeTripId == null || isValidId(data.activeTripId))
+        && (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 1000))
+        && (!('authProvider' in data) || (data.authProvider is string && data.authProvider.size() >= 1 && data.authProvider.size() <= 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTravelPreferences(data, userId) {
+      return data.keys().hasAll(['userId', 'defaultTravelStyle', 'homeCity', 'preferredNotes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'defaultTravelStyle', 'homeCity', 'preferredNotes', 'defaultStayMode', 'defaultCommuteMode', 'maxHotelRadiusKm', 'waitingBufferMinutes', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && isValidTravelStyle(data.defaultTravelStyle)
+        && data.homeCity is string && data.homeCity.size() >= 1 && data.homeCity.size() <= 120
+        && isValidNotesList(data.preferredNotes)
+        && (!('defaultStayMode' in data) || isValidStayMode(data.defaultStayMode))
+        && (!('defaultCommuteMode' in data) || isValidCommuteMode(data.defaultCommuteMode))
+        && (!('maxHotelRadiusKm' in data) || (data.maxHotelRadiusKm is number && data.maxHotelRadiusKm >= 1 && data.maxHotelRadiusKm <= 100))
+        && (!('waitingBufferMinutes' in data) || (data.waitingBufferMinutes is int && data.waitingBufferMinutes >= 0 && data.waitingBufferMinutes <= 180))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedAddress(data, userId) {
+      return data.keys().hasAll(['userId', 'label', 'formattedAddress', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'label', 'formattedAddress', 'city', 'placeId', 'location', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.label is string && data.label.size() >= 1 && data.label.size() <= 160
+        && data.formattedAddress is string && data.formattedAddress.size() >= 1 && data.formattedAddress.size() <= 300
+        && (!('city' in data) || data.city == null || (data.city is string && data.city.size() >= 1 && data.city.size() <= 120))
+        && (!('placeId' in data) || data.placeId == null || (data.placeId is string && data.placeId.size() <= 200))
+        && (!('location' in data) || data.location == null || isValidGeoPoint(data.location))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAppSettings(data, userId) {
+      return data.keys().hasAll(['userId', 'budgetWarningThresholdPct', 'enableConflictDetection', 'autoSortByTime', 'defaultDayStartTime', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'budgetWarningThresholdPct', 'enableConflictDetection', 'autoSortByTime', 'defaultDayStartTime', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.budgetWarningThresholdPct is number && data.budgetWarningThresholdPct >= 50 && data.budgetWarningThresholdPct <= 100
+        && data.enableConflictDetection is bool
+        && data.autoSortByTime is bool
+        && isValidTimeHHMM(data.defaultDayStartTime)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMigrationRecord(data, userId) {
+      return data.keys().hasAll(['userId', 'status', 'migratedTripsCount', 'migratedActivitiesCount', 'migratedDayPlansCount', 'migratedBudgetsCount', 'migratedExpensesCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'status', 'migratedTripsCount', 'migratedActivitiesCount', 'migratedDayPlansCount', 'migratedBudgetsCount', 'migratedExpensesCount', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.status in ['completed', 'dismissed']
+        && data.migratedTripsCount is int && data.migratedTripsCount >= 0 && data.migratedTripsCount <= 1000
+        && data.migratedActivitiesCount is int && data.migratedActivitiesCount >= 0 && data.migratedActivitiesCount <= 50000
+        && data.migratedDayPlansCount is int && data.migratedDayPlansCount >= 0 && data.migratedDayPlansCount <= 10000
+        && data.migratedBudgetsCount is int && data.migratedBudgetsCount >= 0 && data.migratedBudgetsCount <= 1000
+        && data.migratedExpensesCount is int && data.migratedExpensesCount >= 0 && data.migratedExpensesCount <= 50000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTrip(data, userId) {
+      return data.keys().hasAll(['userId', 'name', 'origin', 'destination', 'daysCount', 'adults', 'children', 'travelStyle', 'budget', 'generalNotes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'name', 'origin', 'destination', 'daysCount', 'adults', 'children', 'travelStyle', 'budget', 'generalNotes', 'stayMode', 'hotel', 'commuteMode', 'maxHotelRadiusKm', 'waitingBufferMinutes', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && data.origin is string && data.origin.size() >= 1 && data.origin.size() <= 120
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && data.daysCount is int && data.daysCount >= 1 && data.daysCount <= 14
+        && data.adults is int && data.adults >= 1 && data.adults <= 30
+        && data.children is int && data.children >= 0 && data.children <= 30
+        && isValidTravelStyle(data.travelStyle)
+        && isValidBudgetMap(data.budget)
+        && isValidNotesList(data.generalNotes)
+        && (!('stayMode' in data) || isValidStayMode(data.stayMode))
+        && (!('hotel' in data) || data.hotel == null || isValidHotelMap(data.hotel))
+        && (!('commuteMode' in data) || isValidCommuteMode(data.commuteMode))
+        && (!('maxHotelRadiusKm' in data) || data.maxHotelRadiusKm == null || (data.maxHotelRadiusKm is number && data.maxHotelRadiusKm >= 1 && data.maxHotelRadiusKm <= 100))
+        && (!('waitingBufferMinutes' in data) || data.waitingBufferMinutes == null || (data.waitingBufferMinutes is int && data.waitingBufferMinutes >= 0 && data.waitingBufferMinutes <= 180))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActivity(data, userId, tripId) {
+      return data.keys().hasAll(['userId', 'tripId', 'title', 'description', 'category', 'location', 'imageUrl', 'startTime', 'endTime', 'durationMinutes', 'cost', 'day', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'tripId', 'title', 'description', 'category', 'location', 'imageUrl', 'startTime', 'endTime', 'durationMinutes', 'cost', 'day', 'isChildFriendly', 'crowdLevel', 'notes', 'placeId', 'coordinates', 'travelFromHotelMinutes', 'travelFromPrevMinutes', 'waitingTimeMinutes', 'distanceFromHotelKm', 'isFarFromHotel', 'departureFromHotelTime', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.tripId == tripId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 180
+        && data.description is string && data.description.size() <= 1000
+        && isValidActivityCategory(data.category)
+        && data.location is string && data.location.size() >= 1 && data.location.size() <= 300
+        && data.imageUrl is string && data.imageUrl.size() <= 1000
+        && isValidTimeHHMM(data.startTime)
+        && isValidTimeHHMM(data.endTime)
+        && data.durationMinutes is int && data.durationMinutes >= 15 && data.durationMinutes <= 1440
+        && data.cost is number && data.cost >= 0 && data.cost <= 10000000
+        && data.day is int && data.day >= 1 && data.day <= 14
+        && (!('isChildFriendly' in data) || data.isChildFriendly is bool)
+        && (!('crowdLevel' in data) || data.crowdLevel in ['Low', 'Moderate', 'High'])
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500))
+        && (!('placeId' in data) || data.placeId == null || (data.placeId is string && data.placeId.size() <= 200))
+        && (!('coordinates' in data) || data.coordinates == null || isValidGeoPoint(data.coordinates))
+        && (!('travelFromHotelMinutes' in data) || data.travelFromHotelMinutes == null || (data.travelFromHotelMinutes is number && data.travelFromHotelMinutes >= 0 && data.travelFromHotelMinutes <= 1440))
+        && (!('travelFromPrevMinutes' in data) || data.travelFromPrevMinutes == null || (data.travelFromPrevMinutes is number && data.travelFromPrevMinutes >= 0 && data.travelFromPrevMinutes <= 1440))
+        && (!('waitingTimeMinutes' in data) || data.waitingTimeMinutes == null || (data.waitingTimeMinutes is number && data.waitingTimeMinutes >= 0 && data.waitingTimeMinutes <= 480))
+        && (!('distanceFromHotelKm' in data) || data.distanceFromHotelKm == null || (data.distanceFromHotelKm is number && data.distanceFromHotelKm >= 0 && data.distanceFromHotelKm <= 5000))
+        && (!('isFarFromHotel' in data) || data.isFarFromHotel == null || data.isFarFromHotel is bool)
+        && (!('departureFromHotelTime' in data) || data.departureFromHotelTime == null || isValidTimeHHMM(data.departureFromHotelTime))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDayPlan(data, userId, tripId) {
+      return data.keys().hasAll(['userId', 'tripId', 'dayNumber', 'title', 'pace', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'tripId', 'dayNumber', 'title', 'pace', 'notes', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.tripId == tripId
+        && data.dayNumber is int && data.dayNumber >= 1 && data.dayNumber <= 14
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && isValidDayPace(data.pace)
+        && isValidNotesList(data.notes)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPlannedBudget(data, userId, tripId) {
+      return data.keys().hasAll(['userId', 'tripId', 'total', 'daily', 'food', 'transport', 'attraction', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'tripId', 'total', 'daily', 'food', 'transport', 'attraction', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.tripId == tripId
+        && data.total is number && data.total >= 0 && data.total <= 100000000
+        && data.daily is number && data.daily >= 0 && data.daily <= 100000000
+        && data.food is number && data.food >= 0 && data.food <= 100000000
+        && data.transport is number && data.transport >= 0 && data.transport <= 100000000
+        && data.attraction is number && data.attraction >= 0 && data.attraction <= 100000000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActualExpense(data, userId, tripId) {
+      return data.keys().hasAll(['userId', 'tripId', 'name', 'amount', 'day', 'category', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'tripId', 'name', 'amount', 'day', 'category', 'notes', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.tripId == tripId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && data.amount is number && data.amount >= 0 && data.amount <= 10000000
+        && data.day is int && data.day >= 1 && data.day <= 14
+        && isValidExpenseBucket(data.category)
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // User Profile, Preferences, Addresses, Settings, Migrations & User Trips
+    // =========================================================================
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'homeCity', 'defaultTravelStyle', 'preferredNotes', 'activeTripId', 'photoURL', 'authProvider', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['activeTripId', 'updatedAt'])
+        );
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /preferences/{preferenceId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(preferenceId);
+        allow list: if isOwner(userId) && isValidId(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(preferenceId)
+          && isValidTravelPreferences(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(preferenceId)
+          && isValidTravelPreferences(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['defaultTravelStyle', 'homeCity', 'preferredNotes', 'defaultStayMode', 'defaultCommuteMode', 'maxHotelRadiusKm', 'waitingBufferMinutes', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(preferenceId);
+      }
+
+      match /addresses/{addressId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(addressId);
+        allow list: if isOwner(userId) && isValidId(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(addressId)
+          && isValidSavedAddress(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(addressId)
+          && isValidSavedAddress(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['label', 'formattedAddress', 'city', 'placeId', 'location', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(addressId);
+      }
+
+      match /settings/{settingId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+        allow list: if isOwner(userId) && isValidId(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(settingId)
+          && isValidAppSettings(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(settingId)
+          && isValidAppSettings(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['budgetWarningThresholdPct', 'enableConflictDetection', 'autoSortByTime', 'defaultDayStartTime', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(settingId);
+      }
+
+      match /migrations/{migrationId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(migrationId);
+        allow list: if isOwner(userId) && isValidId(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(migrationId)
+          && isValidMigrationRecord(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(migrationId)
+          && isValidMigrationRecord(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'migratedTripsCount', 'migratedActivitiesCount', 'migratedDayPlansCount', 'migratedBudgetsCount', 'migratedExpensesCount', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(migrationId);
+      }
+
+      // =======================================================================
+      // User-Scoped Trips & Trip Subcollections (Master Gate Ownership)
+      // =======================================================================
+
+      match /trips/{tripId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+        allow list: if isOwner(userId) && isValidId(userId) && existing().userId == request.auth.uid;
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(tripId)
+          && isValidTrip(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(tripId)
+          && isValidTrip(incoming(), userId)
+          && existing().userId == request.auth.uid
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            // Action: Update trip metadata / budget / style
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'budget', 'travelStyle', 'updatedAt']) ||
+            // Action: Update full trip configuration / regeneration
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'origin', 'destination', 'daysCount', 'adults', 'children', 'travelStyle', 'budget', 'generalNotes', 'stayMode', 'hotel', 'commuteMode', 'maxHotelRadiusKm', 'waitingBufferMinutes', 'updatedAt'])
+          );
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+
+        match /activities/{activityId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(activityId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+          allow list: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+          allow create: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(activityId)
+            && isValidActivity(incoming(), userId, tripId)
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && isTripOwnerAfter(userId, tripId);
+          allow update: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(activityId)
+            && isValidActivity(incoming(), userId, tripId)
+            && existing().userId == request.auth.uid
+            && incoming().userId == existing().userId
+            && incoming().tripId == existing().tripId
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time
+            && (
+              // Action: Drag-and-drop reorder / reschedule slot
+              incoming().diff(existing()).affectedKeys().hasOnly(['day', 'startTime', 'endTime', 'departureFromHotelTime', 'updatedAt']) ||
+              // Action: Edit activity details or swap alternative
+              incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'location', 'imageUrl', 'startTime', 'endTime', 'durationMinutes', 'cost', 'day', 'isChildFriendly', 'crowdLevel', 'notes', 'placeId', 'coordinates', 'travelFromHotelMinutes', 'travelFromPrevMinutes', 'waitingTimeMinutes', 'distanceFromHotelKm', 'isFarFromHotel', 'departureFromHotelTime', 'updatedAt'])
+            )
+            && isTripOwner(userId, tripId);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(activityId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+        }
+
+        match /dayPlans/{dayPlanId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(dayPlanId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+          allow list: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+          allow create: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(dayPlanId)
+            && isValidDayPlan(incoming(), userId, tripId)
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && isTripOwnerAfter(userId, tripId);
+          allow update: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(dayPlanId)
+            && isValidDayPlan(incoming(), userId, tripId)
+            && existing().userId == request.auth.uid
+            && incoming().userId == existing().userId
+            && incoming().tripId == existing().tripId
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time
+            && (
+              // Action: Update day pace
+              incoming().diff(existing()).affectedKeys().hasOnly(['pace', 'updatedAt']) ||
+              // Action: Update day title, pace, and notes
+              incoming().diff(existing()).affectedKeys().hasOnly(['title', 'pace', 'notes', 'updatedAt'])
+            )
+            && isTripOwner(userId, tripId);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(dayPlanId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+        }
+
+        match /budgets/{budgetId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(budgetId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+          allow list: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+          allow create: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(budgetId)
+            && isValidPlannedBudget(incoming(), userId, tripId)
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && isTripOwnerAfter(userId, tripId);
+          allow update: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(budgetId)
+            && isValidPlannedBudget(incoming(), userId, tripId)
+            && existing().userId == request.auth.uid
+            && incoming().userId == existing().userId
+            && incoming().tripId == existing().tripId
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['total', 'daily', 'food', 'transport', 'attraction', 'updatedAt'])
+            && isTripOwner(userId, tripId);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(budgetId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+        }
+
+        match /actualExpenses/{expenseId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(expenseId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+          allow list: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && existing().userId == request.auth.uid;
+          allow create: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(expenseId)
+            && isValidActualExpense(incoming(), userId, tripId)
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && isTripOwnerAfter(userId, tripId);
+          allow update: if isOwner(userId)
+            && isValidId(userId)
+            && isValidId(tripId)
+            && isValidId(expenseId)
+            && isValidActualExpense(incoming(), userId, tripId)
+            && existing().userId == request.auth.uid
+            && incoming().userId == existing().userId
+            && incoming().tripId == existing().tripId
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'amount', 'day', 'category', 'notes', 'updatedAt'])
+            && isTripOwner(userId, tripId);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(tripId) && isValidId(expenseId) && existing().userId == request.auth.uid && isTripOwner(userId, tripId);
+        }
+      }
+    }
+  }
+}
